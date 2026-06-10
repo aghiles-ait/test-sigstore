@@ -1,0 +1,9 @@
+.env
+.git
+.github
+.gitignore
+.release-please-manifest.json
+
+release-please-config.json
+target
+*.md
