@@ -1,0 +1,62 @@
+name: Build and Push Release Image
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  prepare:
+    name: Determine image tag
+    runs-on: ubuntu-latest
+    # Prevent execution on forks
+    if: github.repository_owner == 'aghiles-ait'
+    outputs:
+      image_tag: ${{ steps.determine-tag.outputs.image_tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Determine base tag
+        id: determine-tag
+        run: |
+          # Since this workflow only triggers on tags matching 'v*.*.*' we know we're always dealing with a version tag
+          TAG_ON_MAIN=$(git branch -r --contains ${{ github.sha }} 'origin/main')
+
+          if [ -z "$TAG_ON_MAIN" ] ; then
+            echo "Error: Tag ${{ github.ref_name }} is not on main branch"
+            echo "Tags must be created on main branch to generate X.Y.Z image tags"
+            exit 1
+          fi
+
+          GITHUB_REF_NAME="${{ github.ref_name }}"
+          echo "Processing tag on main branch: ${{ github.ref_name }}"
+          echo "image_tag=${GITHUB_REF_NAME#v}" | tee -a $GITHUB_OUTPUT
+  
+  docker-login-build-push:
+    name: Build image
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Login to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          registry: docker.io
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+    
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          file: Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: docker.io/${{ vars.DOCKERHUB_USERNAME }}/test-sigstore:${{ needs.prepare.outputs.image_tag }}
