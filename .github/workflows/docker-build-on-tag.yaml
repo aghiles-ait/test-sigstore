@@ -39,7 +39,17 @@ jobs:
     name: Build image
     needs: prepare
     runs-on: ubuntu-latest
+
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+
+    permissions:
+      contents: read
+
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
       - name: Login to Docker Hub
         uses: docker/login-action@v4
         with:
@@ -52,11 +62,38 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
-    
+
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v7
         with:
+          context: .
           file: Dockerfile
           platforms: linux/amd64
           push: true
           tags: docker.io/${{ vars.DOCKERHUB_USERNAME }}/test-sigstore:${{ needs.prepare.outputs.image_tag }}
+
+  sign:
+    name: Attest SLSA provenance (keyless)
+    needs: [prepare, docker-login-build-push]
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write       # OIDC keyless
+      attestations: write    # écrire l'attestation côté GitHub
+
+    steps:
+      - name: Login to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          registry: docker.io
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Generate & sign SLSA provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: docker.io/${{ vars.DOCKERHUB_USERNAME }}/test-sigstore
+          subject-digest: ${{ needs.docker-login-build-push.outputs.digest }}
+          push-to-registry: true   # pousse l'attestation dans Docker Hub (referrer)
