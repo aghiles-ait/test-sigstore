@@ -92,7 +92,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Generate & sign SLSA provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-name: docker.io/${{ vars.DOCKERHUB_USERNAME }}/test-sigstore
           subject-digest: ${{ needs.docker-login-build-push.outputs.digest }}
