@@ -1,0 +1,17 @@
+{
+  "name": "verify",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@sigstore/bundle": "^4.0.0",
+    "@sigstore/verify": "^3.1.1",
+    "sigstore": "^4.1.1"
+  }
+}
