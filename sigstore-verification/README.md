@@ -20,8 +20,8 @@ certifying the image actually deployed), the script:
 1. **fetches** the attestation bundle from the GitHub API, **by digest**;
 2. **verifies the signature**: Fulcio certificate chain + inclusion in the Rekor
    transparency log + expected OIDC issuer (GitHub Actions);
-3. **verifies the signer identity**: the certificate SAN must match the expected
-   repository workflow (`^https://github.com/<repo>/`);
+3. **verifies the signer identity**: the certificate SAN must match the signing workflow's
+   repository (`^https://github.com/<sign-action-repo>/`);
 4. **verifies the binding**: the attestation `subject` must be **exactly** the supplied
    digest — guarantees the attestation refers to *this* image;
 5. **prints** the source: repository, commit, and triggering workflow.
@@ -47,20 +47,39 @@ certifying the image actually deployed), the script:
 
 ```bash
 # Shell
-./verify-provenance.sh <repo> <sha256-digest>
+./verify-provenance.sh <entrypoint-workflow-repo> <sign-action-repo> <sha256-digest>
 
 # JS
-node verify-js/verify-provenance.js <repo> <sha256-digest>
+node verify-js/verify-provenance.js <entrypoint-workflow-repo> <sign-action-repo> <sha256-digest>
 ```
 
-- `<repo>`: GitHub repository owning the attestation, in `owner/name` format.
+- `<entrypoint-workflow-repo>`: GitHub repository whose event triggered the run — the one
+  that **owns the attestation** (queried via the GitHub API), in `owner/name` format.
+- `<sign-action-repo>`: GitHub repository of the workflow that **signs** the attestation
+  (the reusable workflow), in `owner/name` format. Constrains the certificate identity.
+  Pass the **same value** as the first argument when signing is not done from a reusable
+  workflow.
 - `<sha256-digest>`: image digest. Both `sha256:abc…` and `abc…` forms are accepted.
+
+> **Why two repos?** With keyless signing, the certificate identity (SAN) points to the
+> workflow that actually ran the signing step. If that step lives in a reusable workflow
+> hosted in a *different* repository, the signer identity differs from the repository that
+> owns the attestation — hence the two distinct arguments. When everything is in one repo,
+> pass it twice.
 
 ### Example
 
 ```bash
+# Signing in the same repo (typical case): pass the repo twice
 ./verify-provenance.sh \
   aghiles-ait/test-sigstore \
+  aghiles-ait/test-sigstore \
+  0a50000fc886c537e42d1a953449be0d37af9a2f6fb296a55cdf11403110969a
+
+# Signing via a reusable workflow hosted in another repo
+./verify-provenance.sh \
+  aghiles-ait/test-sigstore \
+  aghiles-ait/ci-workflows \
   0a50000fc886c537e42d1a953449be0d37af9a2f6fb296a55cdf11403110969a
 ```
 
@@ -92,7 +111,7 @@ TDX attestation).
 | `GITHUB_TOKEN` | Authenticates the GitHub API call — required for a **private** repository, or to avoid the anonymous API rate limit. |
 
 ```bash
-GITHUB_TOKEN=ghp_xxx ./verify-provenance.sh <repo> <sha256-digest>
+GITHUB_TOKEN=ghp_xxx ./verify-provenance.sh <entrypoint-workflow-repo> <sign-action-repo> <sha256-digest>
 ```
 
 ## Notes
