@@ -20,11 +20,12 @@ certifying the image actually deployed), the script:
 1. **fetches** the attestation bundle from the GitHub API, **by digest**;
 2. **verifies the signature**: Fulcio certificate chain + inclusion in the Rekor
    transparency log + expected OIDC issuer (GitHub Actions);
-3. **verifies the signer identity**: the certificate SAN must match the signing workflow's
-   repository (`^https://github.com/<sign-action-repo>/`);
+3. **verifies the signer identity**: the certificate SAN must match a workflow under the
+   signing repository (`^https://github.com/<sign-action-repo>/.github/workflows/`);
 4. **verifies the binding**: the attestation `subject` must be **exactly** the supplied
    digest — guarantees the attestation refers to *this* image;
-5. **prints** the source: repository, commit, and triggering workflow.
+5. **prints** clickable links: the source tree at that commit, the workflow file, the
+   Rekor transparency-log entry, the GitHub attestation page, and the triggering event.
 
 > **No registry access is required.** Since the digest comes from a trusted source and is
 > content-addressed, the whole verification is done from the bundle (fetched via GitHub) —
@@ -87,11 +88,30 @@ Output:
 
 ```
 ✅ Attestation SLSA vérifiée et liée à l'image déployée
-   image    : sha256:0a50000fc886c537e42d1a953449be0d37af9a2f6fb296a55cdf11403110969a
-   source   : git+https://github.com/aghiles-ait/test-sigstore@refs/tags/v0.2.0
-   commit   : 4035c60570386a8c797164ffbdaf0d688fb04fe2
-   workflow : https://github.com/aghiles-ait/test-sigstore/.github/workflows/docker-build-on-tag.yaml@refs/tags/v0.2.0
+   image       : sha256:0a50000fc886c537e42d1a953449be0d37af9a2f6fb296a55cdf11403110969a
+   commit      : https://github.com/aghiles-ait/test-sigstore/tree/4035c60570386a8c797164ffbdaf0d688fb04fe2
+   workflow    : https://github.com/aghiles-ait/test-sigstore/blob/4035c60570386a8c797164ffbdaf0d688fb04fe2/.github/workflows/docker-build-on-tag.yaml
+   rekor       : https://search.sigstore.dev/?hash=0a50000fc886c537e42d1a953449be0d37af9a2f6fb296a55cdf11403110969a
+   attestation : https://github.com/aghiles-ait/test-sigstore/attestations/30789221
+   trigger     : push
 ```
+
+Each output field:
+
+| Field | Meaning |
+|---|---|
+| `image` | the verified image digest |
+| `commit` | link to the repo **tree** at the exact source commit |
+| `workflow` | link to the workflow file (`blob`, pinned to the commit) that built the image |
+| `rekor` | link to the Rekor transparency-log search for this image hash |
+| `attestation` | link to the attestation page on GitHub |
+| `trigger` | the GitHub event that triggered the build (`push`, `pull_request`, …) |
+
+> `commit`, `workflow` and `trigger` are derived from the **verified** payload, so they are
+> trustworthy once verification passes. `rekor` and the `attestation` deep-link are
+> **convenience links** to web services — not part of the cryptographic proof. The
+> attestation deep-link is *best-effort* (its numeric id is parsed from an undocumented
+> `bundle_url`); on failure it falls back to the repository's attestations list page.
 
 ## Exit codes
 

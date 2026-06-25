@@ -109,10 +109,40 @@ COMMIT="$(printf '%s' "$PAYLOAD"   | jq -r '.predicate.buildDefinition.resolvedD
 WORKFLOW="$(printf '%s' "$PAYLOAD" | jq -r '.predicate.runDetails.builder.id')"
 EVENT="$(printf '%s' "$PAYLOAD"    | jq -r '.predicate.buildDefinition.internalParameters.github.event_name')"
 
+# Lien cliquable vers l'arborescence du repo à ce commit :
+#   git+https://github.com/<owner>/<repo>@refs/... -> https://github.com/<owner>/<repo>/tree/<sha>
+REPO_URL="${URI#git+}"      # retire le préfixe "git+"
+REPO_URL="${REPO_URL%@*}"   # retire le suffixe "@refs/..."
+COMMIT_URL="${REPO_URL}/tree/${COMMIT}"
+
+# Lien cliquable vers le fichier workflow. builder.id est un IDENTIFIANT, pas une URL :
+#   https://github.com/<owner>/<repo>/<path>@<ref>
+# -> on reconstruit une URL "blob" pinnée au commit (toujours valide).
+WF_NOREF="${WORKFLOW%@*}"                                       # retire @ref
+WF_NOHOST="${WF_NOREF#https://github.com/}"                     # owner/repo/.github/workflows/file.yaml
+WF_OWNER_REPO="$(printf '%s' "$WF_NOHOST" | cut -d/ -f1-2)"     # owner/repo
+WF_PATH="$(printf '%s' "$WF_NOHOST" | cut -d/ -f3-)"           # .github/workflows/file.yaml
+WORKFLOW_URL="https://github.com/${WF_OWNER_REPO}/blob/${COMMIT}/${WF_PATH}"
+
+# Lien vers l'entrée Rekor (log de transparence) par hash de l'image
+REKOR_URL="https://search.sigstore.dev/?hash=${D}"
+
+# Lien vers l'attestation sur GitHub.
+# NB : l'ID exact n'est pas exposé par l'API ; on le DÉDUIT du bundle_url (.../<id>.json...),
+# format non documenté -> best-effort. Fallback : la page liste des attestations (toujours valide).
+BUNDLE_URL="$(jq -r '.attestations[0].bundle_url // empty' "$RESP")"
+ATT_ID="$(printf '%s' "$BUNDLE_URL" | sed -nE 's#.*/([0-9]+)\.json.*#\1#p')"
+if [ -n "$ATT_ID" ]; then
+  ATT_URL="https://github.com/${ENTRYPOINT_WORKFLOW_REPO}/attestations/${ATT_ID}"
+else
+  ATT_URL="https://github.com/${ENTRYPOINT_WORKFLOW_REPO}/attestations"
+fi
+
 echo
 echo "✅ Attestation SLSA vérifiée et liée à l'image déployée"
-echo "   image    : sha256:$D"
-echo "   source   : $URI"
-echo "   commit   : $COMMIT"
-echo "   workflow : $WORKFLOW"
-echo "   trigger  : $EVENT"
+echo "   image       : sha256:$D"
+echo "   commit      : $COMMIT_URL"
+echo "   workflow    : $WORKFLOW_URL"
+echo "   rekor       : $REKOR_URL"
+echo "   attestation : $ATT_URL"
+echo "   trigger     : $EVENT"

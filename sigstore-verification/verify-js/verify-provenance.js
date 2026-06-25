@@ -85,7 +85,8 @@ async function main() {
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok) fail(`API GitHub ${resp.status} : ${data.message || resp.statusText}`);
 
-  const bundle = data.attestations?.[0]?.bundle;
+  const attestation = data.attestations?.[0];
+  const bundle = attestation?.bundle;
   if (!bundle) fail(`Aucune attestation trouvée pour sha256:${D} dans ${entrypointWorkflowRepo}`);
 
   // --- 2) vérif cryptographique : signature + Fulcio + Rekor + émetteur OIDC ---
@@ -118,13 +119,42 @@ async function main() {
   const dep = payload.predicate?.buildDefinition?.resolvedDependencies?.[0] || {};
   const workflow = payload.predicate?.runDetails?.builder?.id;
   const event = payload.predicate?.buildDefinition?.internalParameters?.github?.event_name;
+
+  // Lien cliquable vers l'arborescence du repo à ce commit :
+  //   git+https://github.com/<owner>/<repo>@refs/... -> https://github.com/<owner>/<repo>/tree/<sha>
+  const commit = dep.digest?.gitCommit;
+  const repoUrl = (dep.uri || '').replace(/^git\+/, '').replace(/@.*$/, '');
+  const commitUrl = repoUrl && commit ? `${repoUrl}/tree/${commit}` : '(absent)';
+
+  // Lien cliquable vers le fichier workflow. builder.id est un IDENTIFIANT, pas une URL :
+  //   https://github.com/<owner>/<repo>/<path>@<ref> -> URL "blob" pinnée au commit.
+  let workflowUrl = workflow || '(absent)';
+  const wfParts = (workflow || '').replace(/@.*$/, '').replace(/^https:\/\/github\.com\//, '').split('/');
+  if (commit && wfParts.length >= 3) {
+    const ownerRepo = wfParts.slice(0, 2).join('/');
+    const wfPath = wfParts.slice(2).join('/');
+    workflowUrl = `https://github.com/${ownerRepo}/blob/${commit}/${wfPath}`;
+  }
+
+  // Lien vers l'entrée Rekor (log de transparence) par hash de l'image
+  const rekorUrl = `https://search.sigstore.dev/?hash=${D}`;
+
+  // Lien vers l'attestation sur GitHub.
+  // NB : l'ID exact n'est pas exposé par l'API ; on le DÉDUIT du bundle_url (.../<id>.json...),
+  // format non documenté -> best-effort. Fallback : page liste des attestations (toujours valide).
+  const attId = (attestation.bundle_url || '').match(/\/(\d+)\.json/)?.[1];
+  const attUrl = attId
+    ? `https://github.com/${entrypointWorkflowRepo}/attestations/${attId}`
+    : `https://github.com/${entrypointWorkflowRepo}/attestations`;
+
   console.log();
   console.log('✅ Attestation SLSA vérifiée et liée à l\'image déployée');
-  console.log(`   image    : sha256:${D}`);
-  console.log(`   source   : ${dep.uri || '(absent)'}`);
-  console.log(`   commit   : ${dep.digest?.gitCommit || '(absent)'}`);
-  console.log(`   workflow : ${workflow || '(absent)'}`);
-  console.log(`   trigger  : ${event || '(absent)'}`);
+  console.log(`   image       : sha256:${D}`);
+  console.log(`   commit      : ${commitUrl}`);
+  console.log(`   workflow    : ${workflowUrl}`);
+  console.log(`   rekor       : ${rekorUrl}`);
+  console.log(`   attestation : ${attUrl}`);
+  console.log(`   trigger     : ${event || '(absent)'}`);
 }
 
 main().catch((e) => fail(e.stack || String(e)));
