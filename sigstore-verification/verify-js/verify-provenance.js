@@ -116,9 +116,11 @@ async function main() {
   }
 
   // --- 5) extraire la source ---
-  const dep = payload.predicate?.buildDefinition?.resolvedDependencies?.[0] || {};
-  const workflow = payload.predicate?.runDetails?.builder?.id;
-  const event = payload.predicate?.buildDefinition?.internalParameters?.github?.event_name;
+  const buildDef = payload.predicate?.buildDefinition || {};
+  const dep = buildDef.resolvedDependencies?.[0] || {};
+  const entryWf = buildDef.externalParameters?.workflow || {};   // workflow DÉCLENCHEUR
+  const builderId = payload.predicate?.runDetails?.builder?.id;   // workflow BUILDER (reusable)
+  const event = buildDef.internalParameters?.github?.event_name;
 
   // Lien cliquable vers l'arborescence du repo à ce commit :
   //   git+https://github.com/<owner>/<repo>@refs/... -> https://github.com/<owner>/<repo>/tree/<sha>
@@ -126,15 +128,15 @@ async function main() {
   const repoUrl = (dep.uri || '').replace(/^git\+/, '').replace(/@.*$/, '');
   const commitUrl = repoUrl && commit ? `${repoUrl}/tree/${commit}` : '(absent)';
 
-  // Lien cliquable vers le fichier workflow. builder.id est un IDENTIFIANT, pas une URL :
-  //   https://github.com/<owner>/<repo>/<path>@<ref> -> URL "blob" pinnée au commit.
-  let workflowUrl = workflow || '(absent)';
-  const wfParts = (workflow || '').replace(/@.*$/, '').replace(/^https:\/\/github\.com\//, '').split('/');
-  if (commit && wfParts.length >= 3) {
-    const ownerRepo = wfParts.slice(0, 2).join('/');
-    const wfPath = wfParts.slice(2).join('/');
-    workflowUrl = `https://github.com/${ownerRepo}/blob/${commit}/${wfPath}`;
-  }
+  // Lien vers le workflow DÉCLENCHEUR (externalParameters.workflow), pinné au commit source.
+  const workflowUrl = entryWf.repository && entryWf.path && commit
+    ? `${entryWf.repository}/blob/${commit}/${entryWf.path}`
+    : '(absent)';
+
+  // Lien vers le workflow BUILDER (reusable). builder.id = "https://…/<path>@<sha>" -> blob au <sha>.
+  let builderUrl = builderId || '(absent)';
+  const bMatch = (builderId || '').match(/^https:\/\/github\.com\/([^/]+\/[^/]+)\/(.+)@([^@]+)$/);
+  if (bMatch) builderUrl = `https://github.com/${bMatch[1]}/blob/${bMatch[3]}/${bMatch[2]}`;
 
   // Lien vers l'entrée Rekor (log de transparence) par hash de l'image
   const rekorUrl = `https://search.sigstore.dev/?hash=${D}`;
@@ -152,6 +154,7 @@ async function main() {
   console.log(`   image       : sha256:${D}`);
   console.log(`   commit      : ${commitUrl}`);
   console.log(`   workflow    : ${workflowUrl}`);
+  console.log(`   builder     : ${builderUrl}`);
   console.log(`   rekor       : ${rekorUrl}`);
   console.log(`   attestation : ${attUrl}`);
   console.log(`   trigger     : ${event || '(absent)'}`);

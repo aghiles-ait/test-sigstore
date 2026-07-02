@@ -106,8 +106,12 @@ fi
 PAYLOAD="$(jq -r '.dsseEnvelope.payload | @base64d' "$BUNDLE")"
 URI="$(printf '%s' "$PAYLOAD"      | jq -r '.predicate.buildDefinition.resolvedDependencies[0].uri')"
 COMMIT="$(printf '%s' "$PAYLOAD"   | jq -r '.predicate.buildDefinition.resolvedDependencies[0].digest.gitCommit')"
-WORKFLOW="$(printf '%s' "$PAYLOAD" | jq -r '.predicate.runDetails.builder.id')"
 EVENT="$(printf '%s' "$PAYLOAD"    | jq -r '.predicate.buildDefinition.internalParameters.github.event_name')"
+# Workflow DÉCLENCHEUR (entrée) : externalParameters.workflow (repository + path)
+ENTRY_WF_REPO="$(printf '%s' "$PAYLOAD" | jq -r '.predicate.buildDefinition.externalParameters.workflow.repository')"
+ENTRY_WF_PATH="$(printf '%s' "$PAYLOAD" | jq -r '.predicate.buildDefinition.externalParameters.workflow.path')"
+# Workflow BUILDER/SIGNATAIRE (le reusable) : runDetails.builder.id ("https://…/<path>@<sha>")
+BUILDER_ID="$(printf '%s' "$PAYLOAD" | jq -r '.predicate.runDetails.builder.id')"
 
 # Lien cliquable vers l'arborescence du repo à ce commit :
 #   git+https://github.com/<owner>/<repo>@refs/... -> https://github.com/<owner>/<repo>/tree/<sha>
@@ -115,14 +119,17 @@ REPO_URL="${URI#git+}"      # retire le préfixe "git+"
 REPO_URL="${REPO_URL%@*}"   # retire le suffixe "@refs/..."
 COMMIT_URL="${REPO_URL}/tree/${COMMIT}"
 
-# Lien cliquable vers le fichier workflow. builder.id est un IDENTIFIANT, pas une URL :
-#   https://github.com/<owner>/<repo>/<path>@<ref>
-# -> on reconstruit une URL "blob" pinnée au commit (toujours valide).
-WF_NOREF="${WORKFLOW%@*}"                                       # retire @ref
-WF_NOHOST="${WF_NOREF#https://github.com/}"                     # owner/repo/.github/workflows/file.yaml
-WF_OWNER_REPO="$(printf '%s' "$WF_NOHOST" | cut -d/ -f1-2)"     # owner/repo
-WF_PATH="$(printf '%s' "$WF_NOHOST" | cut -d/ -f3-)"           # .github/workflows/file.yaml
-WORKFLOW_URL="https://github.com/${WF_OWNER_REPO}/blob/${COMMIT}/${WF_PATH}"
+# Lien vers le workflow DÉCLENCHEUR, pinné au commit source (blob) :
+WORKFLOW_URL="${ENTRY_WF_REPO}/blob/${COMMIT}/${ENTRY_WF_PATH}"
+
+# Lien vers le workflow BUILDER (reusable). builder.id = "https://github.com/<owner>/<repo>/<path>@<sha>"
+# -> URL "blob" pinnée au <sha> embarqué dans l'identifiant.
+BUILDER_NOREF="${BUILDER_ID%@*}"                                       # sans @<sha>
+BUILDER_REF="${BUILDER_ID##*@}"                                        # le <sha>
+BUILDER_NOHOST="${BUILDER_NOREF#https://github.com/}"                  # owner/repo/.github/workflows/file.yml
+BUILDER_OWNER_REPO="$(printf '%s' "$BUILDER_NOHOST" | cut -d/ -f1-2)"
+BUILDER_PATH="$(printf '%s' "$BUILDER_NOHOST" | cut -d/ -f3-)"
+BUILDER_URL="https://github.com/${BUILDER_OWNER_REPO}/blob/${BUILDER_REF}/${BUILDER_PATH}"
 
 # Lien vers l'entrée Rekor (log de transparence) par hash de l'image
 REKOR_URL="https://search.sigstore.dev/?hash=${D}"
@@ -143,6 +150,7 @@ echo "✅ Attestation SLSA vérifiée et liée à l'image déployée"
 echo "   image       : sha256:$D"
 echo "   commit      : $COMMIT_URL"
 echo "   workflow    : $WORKFLOW_URL"
+echo "   builder     : $BUILDER_URL"
 echo "   rekor       : $REKOR_URL"
 echo "   attestation : $ATT_URL"
 echo "   trigger     : $EVENT"
